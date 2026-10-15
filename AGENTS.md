@@ -1,6 +1,6 @@
 # Worker 贡献指南
 
-仅维护 TypeScript / Hono / Cloudflare Workers，不放入 Flutter 源码。客户端仓库为 tg-cine；跨仓联调必须明确客户端目录或完整 revision。
+仅维护 Cloudflare Workers + Vite，API 使用 TypeScript / Hono，不放入 Flutter 源码。客户端仓库为 tg-cine；跨仓联调必须明确客户端目录或完整 revision。
 
 ## 结构与风格
 
@@ -10,7 +10,7 @@ src/index.ts 组装 Hono 路由与错误处理；public_service.ts 定义公共�
 
 ## 检查
 
-依次运行 npm ci、npm run format:check、npm run check、npm test、npm run build。build 仅 dry-run。协议或传输变更另运行 npm run test:relay -- <client-checkout>，并同步客户端契约测试。测试覆盖鉴权、失败路径、额度与资源清理。
+依次运行 npm ci、npm run format:check、npm run check、npm test、npm run build、npm run test:vite、npm run deploy:dry-run。dev/build/preview 使用 Cloudflare Vite 插件，build 不部署；dry-run 读取 dist/worker/wrangler.json，不能绕过 Vite 从源码重新打包。协议、传输或运行工具链变更另运行 npm run test:relay -- <client-checkout>，协议变更同步客户端契约测试。测试覆盖鉴权、失败路径、额度与资源清理。
 
 ## 技能与审查
 
