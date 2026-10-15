@@ -1,0 +1,29 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "tg-cine-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-10",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": { "enabled": true, "traces": { "enabled": true } },
+	"vars": {
+		"RELAY_ENABLED": "false",
+		"PUBLIC_SERVICE_ENABLED": "false",
+		"PUBLIC_ORIGIN": "https://tg-cine.zhangheng.eu.org",
+	},
+	"secrets": { "required": ["RELAY_TOKEN", "PUBLIC_SIGNING_KEY"] },
+	"ratelimits": [{ "name": "PUBLIC_REQUESTS", "namespace_id": "20261014", "simple": { "limit": 120, "period": 60 } }],
+	"durable_objects": {
+		"bindings": [
+			{ "name": "PUBLIC_SESSIONS", "class_name": "DeviceSession" },
+			{ "name": "PUBLIC_BUDGET", "class_name": "ServiceBudget" },
+		],
+	},
+	"migrations": [
+		{ "tag": "public-access-v1", "new_sqlite_classes": ["PublicSession", "PublicBudget"] },
+		{
+			"tag": "hono-v2-reset",
+			"deleted_classes": ["PublicSession", "PublicBudget"],
+			"new_sqlite_classes": ["DeviceSession", "ServiceBudget"],
+		},
+	],
+}

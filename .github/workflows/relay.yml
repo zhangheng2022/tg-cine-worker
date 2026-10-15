@@ -1,0 +1,43 @@
+name: Client relay integration
+on:
+  workflow_dispatch:
+    inputs:
+      client_ref:
+        description: 'tg-cine v2 client full commit SHA'
+        required: true
+permissions:
+  contents: read
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require an immutable client revision
+        env:
+          CLIENT_REF: ${{ inputs.client_ref }}
+        run: '[[ "$CLIENT_REF" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: worker
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: zhangheng2022/tg-cine
+          ref: ${{ inputs.client_ref }}
+          path: client
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - name: Install Flutter
+        run: |
+          git clone --depth 1 --branch 3.47.7 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get
+        working-directory: client
+      - run: npm ci
+        working-directory: worker
+      - run: npm run test:relay -- ../client
+        working-directory: worker
