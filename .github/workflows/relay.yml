@@ -4,6 +4,7 @@ on:
     inputs:
       client_ref:
         description: 'tg-cine v2 client full commit SHA'
+        type: string
         required: true
 permissions:
   contents: read
