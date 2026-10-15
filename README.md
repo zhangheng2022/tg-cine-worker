@@ -1,6 +1,6 @@
 # TG Cine Worker
 
-TG Cine 默认中转服务，使用 TypeScript、Hono 和 Cloudflare Workers。客户端独立维护于 [tg-cine](https://github.com/zhangheng2022/tg-cine)，本仓库不包含 Flutter 源码。
+TG Cine 默认中转服务，使用 Cloudflare Workers + Vite，Hono 负责 TypeScript API 路由。客户端独立维护于 [tg-cine](https://github.com/zhangheng2022/tg-cine)，本仓库不包含 Flutter 源码。
 
 只提供 v2：公开配置、设备激活/刷新/撤销，以及经过鉴权和官方 Telegram 动态 CIDR 校验的 WSS → TCP 中转。不读取 Telegram 会话、账号密码或媒体数据库。不提供 v1 兼容。
 
@@ -15,9 +15,13 @@ npm run format:check
 npm run check
 npm test
 npm run build
+npm run test:vite
+npm run deploy:dry-run
 ```
 
-`dev` 只运行本地 Wrangler；`build` 只执行 dry-run，不部署。仓库默认关闭中转和公共接入。开发时从 `.dev.vars.example` 准备已忽略的本机配置；真实密钥不进入 Git 或日志。
+`dev` 使用 Vite 和 `@cloudflare/vite-plugin`，在本地 workerd 中运行；`build` 生成 `dist/worker/`，不部署。`preview` 重新构建并预览产物，`test:vite` 检查开发与已构建产物的 HTTP 行为，`deploy:dry-run` 校验已构建的部署包。仓库默认关闭中转和公共接入。开发时从 `.dev.vars.example` 准备已忽略的本机配置；真实密钥不进入 Git 或日志。
+
+构建配置见 `vite.config.ts`，绑定及运行时配置仍由 `wrangler.jsonc` 管理，部署使用 Vite 生成的 `dist/worker/wrangler.json`。配置依据 [Cloudflare Vite 插件指南](https://developers.cloudflare.com/workers/vite-plugin/get-started/)。插件锁定为与本仓 Wrangler 匹配的版本，升级时一起检查 peer dependencies。
 
 Hono CLI 用于路由和 HTTP 检查，例如 `npx hono routes`、`npx hono request /health --runtime workerd`；DO、TCP 和 WebSocket 行为仍用 Cloudflare Vitest 运行时及真实回环检查。
 
@@ -29,7 +33,7 @@ Hono CLI 用于路由和 HTTP 检查，例如 `npx hono routes`、`npx hono requ
 npm run test:relay -- ../tg-cine
 ```
 
-脚本要求显式客户端目录，在临时 workerd/TCP echo 上核对 Dart 桥接的 1 MiB 顺序及资源关闭；不连接线上，也不放宽生产目标策略。GitHub 手工联调工作流要求完整客户端提交 SHA。
+脚本要求显式客户端目录，通过同一 Vite 配置启动临时 workerd/TCP echo，核对 Dart 桥接的 1 MiB 顺序及资源关闭；不连接线上，也不放宽生产目标策略。GitHub 手工联调工作流要求完整客户端提交 SHA。
 
 ## 文档
 

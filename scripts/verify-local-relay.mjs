@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const root = resolve(import.meta.dirname, '..');
 assert(process.argv[2], 'Usage: npm run test:relay -- <client-checkout>');
 const clientRoot = resolve(process.argv[2]);
-const runtimeDir = join(root, '.wrangler');
+const runtimeDir = join(root, '.cache');
 await mkdir(runtimeDir, { recursive: true });
 const temp = await mkdtemp(join(runtimeDir, 'relay-proof-'));
 const configPath = join(temp, 'wrangler.json');
@@ -71,16 +71,22 @@ export default app;
 	);
 	worker = spawn(
 		process.execPath,
-		[join(root, 'node_modules/wrangler/bin/wrangler.js'), 'dev', '--local', '--config', configPath, '--port', String(workerPort)],
+		[join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--strictPort', '--port', String(workerPort)],
 		{
 			cwd: root,
-			stdio: ['ignore', 'ignore', 'ignore'],
-			env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
+			stdio: ['ignore', 'pipe', 'pipe'],
+			env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH: configPath },
 		},
 	);
+	let startupOutput = '';
+	for (const stream of [worker.stdout, worker.stderr]) {
+		stream.on('data', (chunk) => {
+			startupOutput = (startupOutput + chunk).slice(-16_384);
+		});
+	}
 	let ready = false;
 	for (let attempt = 0; attempt < 100; attempt++) {
-		if (worker.exitCode !== null) throw new Error('Local Worker exited before startup');
+		if (worker.exitCode !== null) throw new Error(`Local Worker exited before startup: ${startupOutput.replaceAll(token, '[redacted]')}`);
 		const response = await fetch(`http://127.0.0.1:${workerPort}/health`, { signal: AbortSignal.timeout(1000) }).catch(() => null);
 		if (response?.ok) {
 			ready = (await response.json()).capabilities.tunnel === true;
@@ -88,7 +94,7 @@ export default app;
 		}
 		await delay(100);
 	}
-	assert(ready, 'Local Worker did not start');
+	assert(ready, `Local Worker did not start: ${startupOutput.replaceAll(token, '[redacted]')}`);
 	const packageConfig = JSON.parse(await readFile(join(clientRoot, '.dart_tool/package_config.json'), 'utf8'));
 	const sdk = dirname(dirname(fileURLToPath(packageConfig.packages.find((entry) => entry.name === 'flutter').rootUri)));
 	const dartCommand = join(sdk, 'bin/cache/dart-sdk/bin', process.platform === 'win32' ? 'dart.exe' : 'dart');

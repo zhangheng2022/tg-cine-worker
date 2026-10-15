@@ -11,5 +11,5 @@
 		"skipLibCheck": true,
 		"types": ["./worker-configuration.d.ts", "node"]
 	},
-	"include": ["worker-configuration.d.ts", "src/**/*.ts", "vitest.config.mts"]
+	"include": ["worker-configuration.d.ts", "src/**/*.ts", "vitest.config.mts", "vite.config.ts"]
 }
