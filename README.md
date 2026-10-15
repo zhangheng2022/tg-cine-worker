@@ -10,7 +10,6 @@ Node.js 24，使用锁文件安装：
 
 ```powershell
 npm ci
-npm run dev
 npm run format:check
 npm run check
 npm test
@@ -18,6 +17,8 @@ npm run build
 npm run test:vite
 npm run deploy:dry-run
 ```
+
+本地开发另运行 `npm run dev`。上面的检查序列与 CI 对齐，`dev` 是常驻进程，不属于顺序退出的检查命令。Windows PowerShell 如遇执行策略限制，使用 `npm.cmd`。
 
 `dev` 使用 Vite 和 `@cloudflare/vite-plugin`，在本地 workerd 中运行；`build` 生成 `dist/worker/`，不部署。`preview` 重新构建并预览产物，`test:vite` 检查开发与已构建产物的 HTTP 行为，`deploy:dry-run` 校验已构建的部署包。仓库默认关闭中转和公共接入。开发时从 `.dev.vars.example` 准备已忽略的本机配置；真实密钥不进入 Git 或日志。
 
@@ -38,7 +39,7 @@ npm run test:relay -- ../tg-cine
 ## 文档
 
 - [架构](docs/architecture.md)、[v2 契约](docs/protocol.md)
-- [部署与旧状态清理](docs/deployment.md)：承接原 Worker/域名，删除旧 DO 数据，必须另行授权部署
+- [发布记录与后续部署](docs/deployment.md)：2026-10-15 已完成 v2 切换及旧状态清理；后续发布仍须另行授权，常规发布不重复销毁状态或轮换密钥
 - [拆仓前历史](docs/history/worker-deployment.md)：仅作追溯，不作为当前操作指南
 
 本仓从首次提交初始化，不携带客户端或旧 Worker Git 历史。Cloudflare 全部 17 个技能、Hono 与 grill-me 保留在 `.agents/skills/`，锁文件独立维护。

@@ -2,7 +2,7 @@
 
 目标仍是 Worker `tg-cine-worker` 和域名 `tg-cine.zhangheng.eu.org`。2026-10-15 已获得授权并完成 v2 发布及旧状态清理。后续发布仍需明确部署授权。
 
-## 本次发布记录
+## 2026-10-15 首次 v2 发布记录
 
 - 客户端 [PR #1](https://github.com/zhangheng2022/tg-cine/pull/1) 与本仓 [PR #1](https://github.com/zhangheng2022/tg-cine-worker/pull/1) 均已合并；服务端源码提交为 `643200804c422e44e6f2e9b6c5843231467d012e`。
 - 线上版本：`df83ba40-739d-4b55-bb20-64aa1725b8dd`，由实际部署配置的 Vite 产物发布，原 Worker 和自定义域名保持不变。
@@ -19,13 +19,15 @@
 
 删除命名空间不可通过普通代码回滚恢复；新版状态启用后只能向前修复。不要部署历史目录里的旧配置。Cloudflare 迁移说明：https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/ 。
 
-## 发布步骤
+## 后续常规发布（需另行授权）
 
-1. 核对账户、服务名、自定义域名和当前迁移 tag，检查是否有其他 Worker 绑定旧 DO。准备新版客户端，并告知旧版将不可用。
-2. 运行完整本地检查、dry-run 和新版跨仓联调。首次切换时先用原代码关闭新连接，等待旧连接最长 15 分钟及传播余量，再用维护版本移除旧 DO 绑定、保留原迁移 tag 和类导出；最后部署包含删除旧类和创建新类的 v2 产物。不要在旧绑定仍存在时直接复用同名绑定完成删除迁移。
-3. 使用已忽略的 `.cache/deployment/wrangler.public.json`（本次准备的新版配置），确认 main 指向新仓 src/index.ts、DO 为新类、两个开关开启、域名绑定正确。在 Vite 构建时选择此源配置，再核对 dist/worker/wrangler.json 中的部署目标及绑定。
-4. 生成新的 PUBLIC_SIGNING_KEY 和私有开发 RELAY_TOKEN，使用受保护文件或 Wrangler 输入传入，不打印值；不复用旧签名材料。Secret 写入本身可能发布版本，必须纳入同一次授权操作。再执行含状态销毁迁移的部署。
-5. 核实新版本承接流量，检查 health/config、设备注册/刷新/撤销、401/429/503 失败路径、目标拒绝及真实 Telegram 握手；使用新版客户端确认原 Telegram 会话和片库仍可恢复。
+首次切换和旧状态销毁已完成，上述记录仅供追溯。常规发布不重做解除绑定、删除旧状态或轮换密钥；新的迁移、轮换或远程数据操作需单独明确范围并获得授权。
+
+1. 核对账户、服务名、自定义域名、已部署版本及迁移 tag。确认使用 DeviceSession/ServiceBudget，保留已执行的迁移历史，不新增重置迁移。
+2. 运行完整本地检查、dry-run 和配套客户端的跨仓联调，记录两仓 revision。客户端升级恢复和完整播放仍需各自验收，不用接口或握手通过替代。
+3. 核对已忽略的 `.cache/deployment/wrangler.public.json`：main 指向本仓 src/index.ts、DO 为现有新类、开关及域名符合目标。在 Vite 构建时选择此源配置，再核对 dist/worker/wrangler.json 中的部署目标及绑定。此文件为本机材料，新检出不能假定已有；缺少时先根据 wrangler.jsonc 和已核实的目标配置准备，不从历史命令猜测线上状态。
+4. 仅在获得部署授权后发布已核对的 Vite 产物，沿用现有服务端 Secrets。密钥轮换不属于普通发布步骤；需要轮换时，单独考虑凭据失效范围，Secret 写入本身也必须纳入部署授权。
+5. 发布后核实新版本承接流量，检查 health/config、设备注册/刷新/撤销、401/429/503、非法目标拒绝及真实 Telegram 握手；按本次变更范围补充新版客户端验收。
 
 运行前再次确认使用新版配置：
 
