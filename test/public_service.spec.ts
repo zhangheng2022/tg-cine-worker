@@ -1,8 +1,9 @@
-import { env, createExecutionContext, runInDurableObject } from 'cloudflare:test';
+import { env, createExecutionContext, runInDurableObject, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index';
-import { authenticatePublic, reservePublic, digest } from '../src/public_service';
-import { MAX_SESSION_BYTES } from '../src/relay';
+import { authenticatePublic, digest } from '../src/public_service';
+import { handleTunnel } from '../src/tunnel';
+import type { RelaySocket } from '../src/relay';
 
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 const configured: Env = {
@@ -42,23 +43,12 @@ describe('公共配置与独立设备凭据', () => {
 		expect(response.status).toBe(429);
 		expect(response.headers.get('Retry-After')).toBe('60');
 	});
-	it('全球字节预算持久限制累计传输，未结算的预留不能被释放', async () => {
-		const budget = env.PUBLIC_BUDGET.getByName(`quota-test-${crypto.randomUUID()}`);
-		for (let index = 0; index < 64; index++) {
-			const id = crypto.randomUUID();
-			expect(await budget.reserve(id)).toBe(true);
-			if (index < 63) await budget.settle(id, MAX_SESSION_BYTES);
-		}
-		expect(await budget.reserve(crypto.randomUUID())).toBe(false);
-	});
 	it('公开配置不包含凭据，关闭或密钥缺失时失败关闭', async () => {
 		const response = await fetch('/v2/config');
 		expect(response.status).toBe(200);
 		expect(response.headers.get('Cache-Control')).toBe('no-store');
 		const value = await response.text();
-		const limits = JSON.parse(value).limits;
-		expect(limits).not.toHaveProperty('enrollments');
-		expect(limits).not.toHaveProperty('addressEnrollments');
+		expect(JSON.parse(value)).not.toHaveProperty('limits');
 		expect(value).toContain('wss://tg-cine.zhangheng.eu.org/v2/tunnel');
 		expect(value).not.toContain('Token');
 		expect(value).not.toContain(configured.PUBLIC_SIGNING_KEY);
@@ -96,58 +86,62 @@ describe('公共配置与独立设备凭据', () => {
 			(await worker.fetch(new IncomingRequest('https://worker.example/v2/devices'), configured, createExecutionContext())).status,
 		).toBe(405);
 	});
-	it('激活不受每日次数限制，也不修改已有流量预算', async () => {
-		const budget = env.PUBLIC_BUDGET.getByName('daily-budget');
-		await runInDurableObject(budget, async (_instance, state) => {
-			state.storage.sql.exec(
-				'INSERT OR REPLACE INTO usage(day,bytes) VALUES (?,?)',
-				Math.floor(Date.now() / 86_400_000),
-				MAX_SESSION_BYTES,
-			);
-		});
-		const ip = `test-${crypto.randomUUID()}`;
-		for (let index = 0; index < 33; index++) {
-			const req = request('/v2/devices');
-			req.headers.set('CF-Connecting-IP', ip);
-			expect((await worker.fetch(req, configured, createExecutionContext())).status).toBe(201);
-		}
-		await runInDurableObject(budget, async (_instance, state) => {
-			expect(state.storage.sql.exec('SELECT bytes FROM usage WHERE day=?', Math.floor(Date.now() / 86_400_000)).one()).toEqual({
-				bytes: MAX_SESSION_BYTES,
-			});
-		});
-	});
-	it('连接预留限制并发，关闭结算幂等，凭据从持久表读取', async () => {
+	it('旧设备和全局额度、遗留租约不再阻止七条并发连接，保留原凭据与账本', async () => {
 		const tokens = await enroll();
 		const access = await authenticatePublic(request('/v2/tunnel', tokens.accessToken), configured);
 		if (access instanceof Response) throw new Error('Authentication failed');
-		const closures: ((bytes: number) => Promise<void>)[] = [];
-		for (let index = 0; index < 6; index++) {
-			const close = await reservePublic(access, configured);
-			if (close instanceof Response) throw new Error('Reservation failed');
-			closures.push(close);
+		const budget = env.PUBLIC_BUDGET.getByName('daily-budget');
+		for (const stub of [access.session, budget]) {
+			await runInDurableObject(stub, async (_instance, state) => {
+				state.storage.sql.exec('INSERT OR REPLACE INTO usage VALUES (?,?)', Math.floor(Date.now() / 86_400_000), 4 * 1024 ** 3);
+				for (let index = 0; index < 6; index++) {
+					state.storage.sql.exec(
+						'INSERT OR REPLACE INTO leases VALUES (?,?,?)',
+						`old-${index}`,
+						Math.floor(Date.now() / 86_400_000),
+						Date.now() + 900000,
+					);
+				}
+			});
 		}
-		expect(((await reservePublic(access, configured)) as Response).status).toBe(429);
-		for (const close of closures) {
-			await close(0);
-			await close(0);
+		const clients: WebSocket[] = [];
+		const contexts: ExecutionContext[] = [];
+		let closed = 0;
+		try {
+			for (let index = 0; index < 7; index++) {
+				const ctx = createExecutionContext();
+				contexts.push(ctx);
+				const socket: RelaySocket = {
+					readable: new ReadableStream<Uint8Array>(),
+					writable: new WritableStream<Uint8Array>(),
+					opened: Promise.resolve({}),
+					closed: Promise.resolve(),
+					close: async () => {
+						closed++;
+					},
+				};
+				const req = request('/v2/tunnel?v=2&target=ip4_5b6c388b', tokens.accessToken);
+				req.headers.set('Upgrade', 'websocket');
+				const response = await handleTunnel(req, configured, ctx, () => socket);
+				expect(response.status).toBe(101);
+				response.webSocket!.accept();
+				clients.push(response.webSocket!);
+			}
+		} finally {
+			for (const client of clients) client.close();
+			await Promise.all(contexts.map(waitOnExecutionContext));
+		}
+		expect(closed).toBe(7);
+		for (const stub of [access.session, budget]) {
+			await runInDurableObject(stub, async (_instance, state) => {
+				expect(state.storage.sql.exec('SELECT bytes FROM usage WHERE day=?', Math.floor(Date.now() / 86_400_000)).one()).toEqual({
+					bytes: 4 * 1024 ** 3,
+				});
+				expect(state.storage.sql.exec('SELECT count(*) AS total FROM leases').one()).toEqual({ total: 6 });
+			});
 		}
 		await runInDurableObject(access.session, async (instance) => {
 			expect(instance.authenticate(await digest(tokens.accessToken))).toBe(true);
 		});
-		const close = await reservePublic(access, configured);
-		expect(close).not.toBeInstanceOf(Response);
-		if (!(close instanceof Response)) await close(0);
-	});
-	it('设备日额度不能通过反复开关连接绕过，异常连接仍占额度', async () => {
-		const tokens = await enroll();
-		const access = await authenticatePublic(request('/v2/tunnel', tokens.accessToken), configured);
-		if (access instanceof Response) throw new Error('Authentication failed');
-		for (let index = 0; index < 16; index++) {
-			const close = await reservePublic(access, configured);
-			if (close instanceof Response) throw new Error('Reservation failed');
-			await close(MAX_SESSION_BYTES);
-		}
-		expect(((await reservePublic(access, configured)) as Response).status).toBe(429);
 	});
 });

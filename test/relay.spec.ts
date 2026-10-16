@@ -96,6 +96,31 @@ describe('受限双向中转', () => {
 		await waitOnExecutionContext(idleCtx);
 		expect(idleSource.close).toHaveBeenCalledOnce();
 	});
+	it('持续传输超过旧的 64 MiB 和 15 分钟上限仍保持连接', async () => {
+		vi.useFakeTimers();
+		const source = upstream();
+		const ctx = createExecutionContext();
+		const client = (await handleTunnel(request(), configured, ctx, () => source.socket)).webSocket!;
+		client.accept();
+		let ended = false;
+		client.addEventListener('close', () => {
+			ended = true;
+		});
+		try {
+			for (let index = 0; index < 1025; index++) {
+				const ack = nextMessage(client);
+				client.send(new Uint8Array(MAX_FRAME_BYTES));
+				expect(await ack).toBe('ACK');
+				await vi.advanceTimersByTimeAsync(1000);
+			}
+			expect(ended).toBe(false);
+			expect(source.close).not.toHaveBeenCalled();
+		} finally {
+			client.close();
+			await waitOnExecutionContext(ctx);
+		}
+		expect(source.close).toHaveBeenCalledOnce();
+	}, 30000);
 	it('未授权请求不会打开上游', async () => {
 		const connect = vi.fn(() => upstream().socket);
 		const response = await handleTunnel(request({ Upgrade: 'websocket' }), configured, createExecutionContext(), connect);

@@ -2,7 +2,7 @@ import { authorize } from './auth';
 import { errorResponse, readTargetId } from './protocol';
 import { resolveTarget } from './targets';
 import { openRelay, type ConnectRelay } from './relay';
-import { authenticatePublic, reservePublic } from './public_service';
+import { authenticatePublic } from './public_service';
 
 export async function handleTunnel(
 	request: Request,
@@ -24,7 +24,5 @@ export async function handleTunnel(
 	if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
 		return errorResponse(426, 'WEBSOCKET_REQUIRED', { Upgrade: 'websocket' });
 	}
-	const settlement = access ? await reservePublic(access, env) : undefined;
-	if (settlement instanceof Response) return settlement;
-	return openRelay(target, ctx, connectRelay, request.headers.get('X-TG-Cine-Trace') ?? undefined, settlement);
+	return openRelay(target, ctx, connectRelay, request.headers.get('X-TG-Cine-Trace') ?? undefined);
 }

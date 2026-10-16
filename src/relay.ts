@@ -5,8 +5,6 @@ import type { RelayTarget } from './targets';
 export const MAX_FRAME_BYTES = 64 * 1024;
 export const MAX_PENDING_BYTES = 256 * 1024;
 export const MAX_PENDING_FRAMES = 64;
-export const MAX_SESSION_BYTES = 64 * 1024 * 1024;
-export const SESSION_MS = 15 * 60 * 1000;
 const IDLE_MS = 30_000;
 const CONNECT_MS = 5_000;
 const ACK_MS = 30_000;
@@ -19,7 +17,6 @@ export async function openRelay(
 	ctx: Pick<ExecutionContext, 'waitUntil'>,
 	connectRelay: ConnectRelay = connect,
 	traceId?: string,
-	onClose?: (bytes: number) => Promise<void>,
 ): Promise<Response> {
 	let socket: RelaySocket | undefined;
 	let connectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -35,7 +32,6 @@ export async function openRelay(
 	} catch {
 		// No destination, token, or upstream exception is returned to the caller.
 		if (socket) ctx.waitUntil(socket.close().catch(() => {}));
-		if (onClose) ctx.waitUntil(onClose(0));
 		return errorResponse(502, 'UPSTREAM_UNAVAILABLE');
 	} finally {
 		if (connectTimer !== undefined) clearTimeout(connectTimer);
@@ -63,20 +59,17 @@ export async function openRelay(
 	let windowReady: (() => void) | undefined;
 	let ackTimer: ReturnType<typeof setTimeout> | undefined;
 	let idleTimer: ReturnType<typeof setTimeout>;
-	const sessionTimer = setTimeout(() => stop(1008, 'SESSION_LIMIT'), SESSION_MS);
 
 	function stop(code = 1000, reason = 'CLOSED') {
 		if (stopped) return;
 		stopped = true;
 		if (pendingFrames.length) maxAckAgeMs = Math.max(maxAckAgeMs, Date.now() - pendingFrames[0].sentAt);
 		clearTimeout(idleTimer);
-		clearTimeout(sessionTimer);
 		if (ackTimer !== undefined) clearTimeout(ackTimer);
 		windowReady?.();
 		windowReady = undefined;
 		pendingFrames.length = 0;
 		inFlightBytes = 0;
-		if (onClose) ctx.waitUntil(onClose(Math.min(sessionBytes, MAX_SESSION_BYTES)));
 		if (server.readyState < WebSocket.CLOSED) server.close(code, reason);
 		ctx.waitUntil(
 			Promise.allSettled([reader.cancel(), writer.abort(), connectedSocket.close()]).then(() => {
@@ -122,15 +115,6 @@ export async function openRelay(
 		});
 	}
 
-	function count(bytes: number): boolean {
-		sessionBytes += bytes;
-		if (sessionBytes > MAX_SESSION_BYTES) {
-			stop(1008, 'BYTE_LIMIT');
-			return false;
-		}
-		return true;
-	}
-
 	server.addEventListener('close', () => stop());
 	server.addEventListener('error', () => stop(1011, 'TRANSPORT_ERROR'));
 	server.addEventListener('message', (event) => {
@@ -154,7 +138,7 @@ export async function openRelay(
 			stop(1009, 'FRAME_OR_QUEUE_LIMIT');
 			return;
 		}
-		if (!count(data.byteLength)) return;
+		sessionBytes += data.byteLength;
 		pendingBytes += data.byteLength;
 		touch();
 		pendingWrites = pendingWrites
@@ -192,7 +176,7 @@ export async function openRelay(
 							await waitForAcknowledgement();
 						}
 						if (stopped) return;
-						if (!count(frame.byteLength)) return;
+						sessionBytes += frame.byteLength;
 						pendingFrames.push({ bytes: frame.byteLength, sentAt: Date.now() });
 						inFlightBytes += frame.byteLength;
 						maxInFlightBytes = Math.max(maxInFlightBytes, inFlightBytes);

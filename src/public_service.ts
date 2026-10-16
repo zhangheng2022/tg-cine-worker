@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { errorResponse, PROTOCOL_VERSION } from './protocol';
 import { getTelegramPolicy } from './targets';
-import { DEVICE_DAILY_BYTES, GLOBAL_DAILY_BYTES, MAX_DEVICE_CONNECTIONS } from './public_access';
 import type { DeviceSession } from './public_access';
 
 const encoder = new TextEncoder();
@@ -62,22 +61,6 @@ export async function authenticatePublic(request: Request, env: Env): Promise<Pu
 	const session = env.PUBLIC_SESSIONS.getByName(token.id);
 	if (!(await session.authenticate(token.hash))) return errorResponse(401, 'UNAUTHORIZED', { 'WWW-Authenticate': 'Bearer' });
 	return { session, hash: token.hash };
-}
-
-export async function reservePublic(access: PublicAccess, env: Env): Promise<((bytes: number) => Promise<void>) | Response> {
-	const id = crypto.randomUUID();
-	const local = await access.session.reserve(access.hash, id);
-	if (local === 'unauthorized') return errorResponse(401, 'UNAUTHORIZED');
-	if (local === 'limited') return errorResponse(429, 'DEVICE_LIMIT', { 'Retry-After': '60' });
-	const budget = env.PUBLIC_BUDGET.getByName('daily-budget');
-	if (!(await budget.reserve(id))) {
-		await access.session.settle(id, 0);
-		return errorResponse(429, 'SERVICE_LIMIT', { 'Retry-After': '60' });
-	}
-	// Unsettled/expired reservations remain fully charged, including after process loss.
-	return async (bytes) => {
-		await Promise.all([access.session.settle(id, bytes), budget.settle(id, bytes)]);
-	};
 }
 
 async function emptyBody(request: Request): Promise<boolean> {
@@ -142,7 +125,6 @@ export const publicRoutes = new Hono<PublicEnv>()
 			protocolVersion: PROTOCOL_VERSION,
 			relay: `${c.env.PUBLIC_ORIGIN.replace('https:', 'wss:')}/v2/tunnel`,
 			targetPolicy,
-			limits: { deviceDailyBytes: DEVICE_DAILY_BYTES, serviceDailyBytes: GLOBAL_DAILY_BYTES, connections: MAX_DEVICE_CONNECTIONS },
 		});
 	})
 	.post('/devices', available, bootstrap, emptyJson, async (c) => {

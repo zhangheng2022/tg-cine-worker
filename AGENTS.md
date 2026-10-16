@@ -4,13 +4,13 @@
 
 ## 结构与风格
 
-src/index.ts 组装 Hono 路由与错误处理；public_service.ts 定义公共接口和请求中间件；public_access.ts 定义 DeviceSession / ServiceBudget；tunnel.ts 编排鉴权、目标校验与额度预留；relay.ts 负责 TCP/WSS 流控和清理；targets.ts 获取官方动态策略。按现有职责组织，不增加空 controller/service/repository 层。
+src/index.ts 组装 Hono 路由与错误处理；public_service.ts 定义公共接口和请求中间件；public_access.ts 定义 DeviceSession / ServiceBudget；tunnel.ts 编排鉴权、目标校验与接入；relay.ts 负责 TCP/WSS 流控和清理；targets.ts 获取官方动态策略。按现有职责组织，不增加空 controller/service/repository 层。
 
 使用 Prettier（tab、单引号、分号、140 字符行宽），Node.js 24，npm 锁文件。Env 由 Wrangler 生成，不手写重复类型。
 
 ## 检查
 
-依次运行 npm ci、npm run format:check、npm run check、npm test、npm run build、npm run test:vite、npm run deploy:dry-run。dev/build/preview 使用 Cloudflare Vite 插件，build 不部署；dry-run 读取 dist/worker/wrangler.json，不能绕过 Vite 从源码重新打包。协议、传输或运行工具链变更另运行 npm run test:relay -- <client-checkout>，协议变更同步客户端契约测试。测试覆盖鉴权、失败路径、额度与资源清理。
+依次运行 npm ci、npm run format:check、npm run check、npm test、npm run build、npm run test:vite、npm run deploy:dry-run。dev/build/preview 使用 Cloudflare Vite 插件，build 不部署；dry-run 读取 dist/worker/wrangler.json，不能绕过 Vite 从源码重新打包。协议、传输或运行工具链变更另运行 npm run test:relay -- <client-checkout>，协议变更同步客户端契约测试。测试覆盖鉴权、失败路径、旧额度不再拦截与资源清理。
 
 ## 技能与审查
 
@@ -22,6 +22,6 @@ grill-me 委托环境中的 grilling 技能，仅用户明确调用时开展质�
 
 仅 v2，不保留旧协议、旧客户端、旧凭据或旧状态兼容。2026-10-15 的 v2 发布记录见 docs/deployment.md，旧 PublicSession/PublicBudget 已清理。常规发布保留迁移历史，不重复销毁状态或轮换密钥；本地配置和 dry-run 不构成线上执行证据。
 
-只允许动态获取的 Telegram 官方公网 CIDR、固定端口 443。抓取/过期失败拒绝，不回退固定 IP 或任意主机。鉴权、目标校验、Upgrade 和预算预留先于 TCP。保留有界帧/窗口/时长、异常清理和保守额度结算。
+只允许动态获取的 Telegram 官方公网 CIDR、固定端口 443。抓取/过期失败拒绝，不回退固定 IP 或任意主机。鉴权、目标校验和 Upgrade 先于 TCP。保留有界帧/窗口、连接/空闲/ACK 超时及异常清理；按用户要求取消播放流量、持续时长及设备并发配额。
 
 Secrets、本机配置和日志不提交，不输出凭据。仓库默认服务关闭。部署、Secret 写入和远程状态删除均须明确部署授权。承接既有服务时以 docs/deployment.md 为准，不执行历史文档中的旧命令。中文提交；公开前检查 Git 内容没有敏感材料。

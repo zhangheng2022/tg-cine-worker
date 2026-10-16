@@ -2,6 +2,18 @@
 
 目标仍是 Worker `tg-cine-worker` 和域名 `tg-cine.zhangheng.eu.org`。2026-10-15 已获得授权并完成 v2 发布及旧状态清理。后续发布仍需明确部署授权。
 
+## 2026-10-15 取消播放配额（已部署）
+
+用户已确认取消设备/全局日流量、单连接流量与持续时长、设备并发配额，保留鉴权、目标白名单、请求防刷和内存保护。源码已移除配额检查及预留/结算；现有 DeviceSession/ServiceBudget 类、绑定、迁移历史和数据保留，没有重置设备或轮换密钥。客户端配置解析本来就不依赖 limits，无需增加兼容分支。
+
+北京时间 20:26 经用户明确授权，由实际部署配置构建的 Vite 产物发布为 `01368cee-6b77-4aa4-a606-8baed1d5c89c`，承接 100% 流量，替换旧配额版本 `df83ba40-739d-4b55-bb20-64aa1725b8dd`。发布前后绑定完全一致，DeviceSession/ServiceBudget 命名空间 ID 未变，两项 Secret 保留；没有执行 Secret 写入、数据删除或新增迁移。线上 health 正常、v2 config 不再包含 limits、无凭据 tunnel 返回 401；原设备凭据及 Telegram 会话连接成功。构建、dry-run、部署日志和前后版本元数据留在忽略目录 `.cache/deployment/quota-*`。取消配额后，关闭服务开关和撤销凭据只拒绝新连接，持续活跃的旧连接没有固定结束时间；停服操作不能再依赖等待 15 分钟。
+
+旧线上 DEVICE_LIMIT 已用原设备凭据定位：北京时间 18:50:24 停止前次测试，19:06:15（超过最长租约 15 分 30 秒）首连接 101、并发第二条 429 DEVICE_LIMIT；正常关闭首连接后，19:06:18 再开连接为 101。排除此前本机租约未释放占满并发，表明日预算只够预留一条 64 MiB 连接，不够两条；未结算预留仍可能计入旧日账本，不能由此得出实际流量用满 1 GiB。此次正常关闭后预算可复用。证据留在客户端忽略目录 `.cache/verification/relay-limit-after-expiry.json`，未重置远程数据。
+
+本地 67 项 Worker 测试、格式/类型检查、Vite build/dev/preview 检查、构建产物 dry-run，以及客户端 → workerd → TCP 的 1 MiB 联调通过。新增回归覆盖旧满额账本及租约不阻止七条并发连接，持续传输跨过旧 64 MiB/15 分钟边界；保留原鉴权、策略、ACK/队列/超时与关闭回归。Code Review 工具仅支持 PR CI 查询，本地差异采用人工审查。Hono Node 快照不能解析 cloudflare 内建模块，使用 workerd HTTP 验证与 Cloudflare Vitest；未改技能说明。
+
+上线后的 Windows 真实复验使用原设备、Telegram 账号和原选定视频，账号 ready，真实画面、音频输出、前拖/回拖和重开续播位置恢复均有证据；没有 HTTP 429、流量/时长配额断流。四段约 61 秒观察分别缓冲 34.7、29.8、35.2、27.1 秒，持续性测试明确失败，实际听感尚未人工确认。取消配额上线成功不等于播放缓冲已修复。客户端完整记录见其 `docs/flutter-player.md` 最新章节及忽略目录 `.cache/verification/quota-deployed-real/real-library-playback.json`。
+
 ## 2026-10-15 首次 v2 发布记录
 
 - 客户端 [PR #1](https://github.com/zhangheng2022/tg-cine/pull/1) 与本仓 [PR #1](https://github.com/zhangheng2022/tg-cine-worker/pull/1) 均已合并；服务端源码提交为 `643200804c422e44e6f2e9b6c5843231467d012e`。
