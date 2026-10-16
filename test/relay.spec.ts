@@ -1,6 +1,6 @@
 import { createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_FRAME_BYTES, MAX_PENDING_BYTES, MAX_PENDING_FRAMES, type RelaySocket } from '../src/relay';
+import { MAX_FRAME_BYTES, MAX_DOWNSTREAM_BYTES, MAX_PENDING_BYTES, MAX_PENDING_FRAMES, type RelaySocket } from '../src/relay';
 import { handleTunnel } from '../src/tunnel';
 
 vi.mock('../src/targets', async (original) => ({
@@ -167,7 +167,8 @@ describe('受限双向中转', () => {
 		expect(source.close).toHaveBeenCalledOnce();
 	});
 	it.each([
-		{ bytes: MAX_FRAME_BYTES, frames: MAX_PENDING_BYTES / MAX_FRAME_BYTES },
+		{ bytes: MAX_FRAME_BYTES, frames: MAX_DOWNSTREAM_BYTES / MAX_FRAME_BYTES },
+		{ bytes: 4096, frames: 256 },
 		{ bytes: 1, frames: MAX_PENDING_FRAMES },
 	])('窗口受字节和帧数限制，确认后只释放相应空间 $bytes', async ({ bytes, frames }) => {
 		const source = upstream();
@@ -185,7 +186,7 @@ describe('受限双向中转', () => {
 		expect(received).toHaveLength(frames);
 		client.send('ACK');
 		await vi.waitFor(() => expect(received).toHaveLength(frames + 1));
-		expect(received.map((frame) => frame[0])).toEqual(Array.from({ length: frames + 1 }, (_, index) => index));
+		expect(received.map((frame) => frame[0])).toEqual(Array.from({ length: frames + 1 }, (_, index) => index % 256));
 		client.close();
 		await waitOnExecutionContext(ctx);
 		expect(source.close).toHaveBeenCalledOnce();
@@ -223,7 +224,7 @@ describe('受限双向中转', () => {
 		client.addEventListener('message', (event) => {
 			lengths.push((event.data as ArrayBuffer).byteLength);
 		});
-		const sizes = [1, MAX_FRAME_BYTES, MAX_FRAME_BYTES, MAX_FRAME_BYTES, MAX_FRAME_BYTES - 1];
+		const sizes = [1, ...Array.from({ length: MAX_DOWNSTREAM_BYTES / MAX_FRAME_BYTES - 1 }, () => MAX_FRAME_BYTES), MAX_FRAME_BYTES - 1];
 		for (const size of [...sizes, 2]) source.send(new Uint8Array(size));
 		await vi.waitFor(() => expect(lengths).toEqual(sizes));
 		client.send('ACK');

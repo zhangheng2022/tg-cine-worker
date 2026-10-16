@@ -4,7 +4,8 @@ import type { RelayTarget } from './targets';
 
 export const MAX_FRAME_BYTES = 64 * 1024;
 export const MAX_PENDING_BYTES = 256 * 1024;
-export const MAX_PENDING_FRAMES = 64;
+export const MAX_DOWNSTREAM_BYTES = 1024 * 1024;
+export const MAX_PENDING_FRAMES = 256;
 const IDLE_MS = 30_000;
 const CONNECT_MS = 5_000;
 const ACK_MS = 30_000;
@@ -161,7 +162,7 @@ export async function openRelay(
 		(async () => {
 			try {
 				while (!stopped) {
-					while (!stopped && (inFlightBytes >= MAX_PENDING_BYTES || pendingFrames.length >= MAX_PENDING_FRAMES)) {
+					while (!stopped && (inFlightBytes >= MAX_DOWNSTREAM_BYTES || pendingFrames.length >= MAX_PENDING_FRAMES)) {
 						await waitForAcknowledgement();
 					}
 					if (stopped) return;
@@ -172,7 +173,7 @@ export async function openRelay(
 					const data = new Uint8Array(value);
 					for (let offset = 0; offset < data.byteLength && !stopped; offset += MAX_FRAME_BYTES) {
 						const frame = data.subarray(offset, offset + MAX_FRAME_BYTES);
-						while (!stopped && (inFlightBytes + frame.byteLength > MAX_PENDING_BYTES || pendingFrames.length >= MAX_PENDING_FRAMES)) {
+						while (!stopped && (inFlightBytes + frame.byteLength > MAX_DOWNSTREAM_BYTES || pendingFrames.length >= MAX_PENDING_FRAMES)) {
 							await waitForAcknowledgement();
 						}
 						if (stopped) return;
